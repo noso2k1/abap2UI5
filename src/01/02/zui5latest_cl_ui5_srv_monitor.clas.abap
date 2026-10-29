@@ -118,7 +118,8 @@ CLASS zui5latest_cl_ui5_srv_monitor IMPLEMENTATION.
     DATA ls_config TYPE zui5latest_if_ui5_exit=>ty_s_http_config_post.
 
     TRY.
-        zui5latest_cl_ui5_user_exit=>get_instance( )->set_config_http_post( CHANGING cs_config = ls_config ).
+        DATA(lo_user_exit) = zui5latest_cl_ui5_user_exit=>get_instance( ).
+        lo_user_exit->set_config_http_post( CHANGING cs_config = ls_config ).
         result = ls_config-check_monitor_active.
       CATCH cx_root.
         result = abap_false.

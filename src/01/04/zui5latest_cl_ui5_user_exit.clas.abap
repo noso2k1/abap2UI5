@@ -135,13 +135,20 @@ CLASS zui5latest_cl_ui5_user_exit IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " the shipped exit itself: the defaults, and nothing to dispatch to -
-    " what the lookup answers on a system without an exit. Decided by the
-    " class, not the type of the reference: a subclass of the shipped exit
-    " is a customer exit like any other
+    " the shipped exit itself, or a subclass of it: the defaults, and
+    " nothing to dispatch to - what the lookup answers on a system without
+    " an exit. A subclass is deliberately NOT installed as a customer exit:
+    " the shipped set_config_http_get/post dispatch to gi_user_exit, and a
+    " method the subclass does not redefine (or redefines with a super->
+    " call) IS that shipped body - it would find gi_user_exit bound, call
+    " itself, and dump on the first request. Installed as gi_me the
+    " subclass's own redefinitions run, and everything else is the default
     DATA lo_shipped TYPE REF TO zui5latest_cl_ui5_user_exit.
-    IF zui5latest_cl_ui5_util_context=>rtti_get_classname_by_ref( io_exit )
-         = zui5latest_cl_ui5_util_context=>rtti_get_ref_type_name( lo_shipped ).
+    TRY.
+        lo_shipped ?= io_exit.
+      CATCH cx_sy_move_cast_error ##NO_HANDLER.
+    ENDTRY.
+    IF lo_shipped IS BOUND.
       gi_me = io_exit.
     ELSE.
       gi_user_exit   = io_exit.

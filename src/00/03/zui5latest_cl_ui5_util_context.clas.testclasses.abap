@@ -502,6 +502,12 @@ CLASS ltcl_string IMPLEMENTATION.
                    && zui5latest_cl_ui5_util_context=>cv_char_util_horizontal_tab && lv_ff && `g`.
     cl_abap_unit_assert=>assert_equals( exp = `a&amp;b&lt;c&gt;d&quot;e'f&#xA;&#x9;g`
                                         act = zui5latest_cl_ui5_util_context=>c_escape_xml( lv_raw ) ).
+
+    " the non-characters U+FFFE and U+FFFF are dropped like a control
+    " character - the XMLView parser refuses the document for one of them
+    DATA(lv_nonchar) = zui5latest_cl_ui5_util_context=>conv_get_string_by_xstring( CONV xstring( `EFBFBE` && `EFBFBF` ) ).
+    cl_abap_unit_assert=>assert_equals( exp = `ab`
+                                        act = zui5latest_cl_ui5_util_context=>c_escape_xml( `a` && lv_nonchar && `b` ) ).
     cl_abap_unit_assert=>assert_equals( exp = `plain`
                                         act = zui5latest_cl_ui5_util_context=>c_escape_xml( `plain` ) ).
 
@@ -775,8 +781,6 @@ CLASS ltcl_rtti DEFINITION FINAL
     METHODS test_struc_to_pairs  FOR TESTING RAISING cx_static_check.
     METHODS test_scan_flag       FOR TESTING RAISING cx_static_check.
     METHODS test_scan_flag_nested FOR TESTING RAISING cx_static_check.
-    METHODS test_hash_string      FOR TESTING RAISING cx_static_check.
-    METHODS test_hash_fallback    FOR TESTING RAISING cx_static_check.
     METHODS test_sel_tab_unbound  FOR TESTING RAISING cx_static_check.
     METHODS test_sel_tab_elem     FOR TESTING RAISING cx_static_check.
     METHODS test_sel_tab_of_tabs  FOR TESTING RAISING cx_static_check.
@@ -816,54 +820,6 @@ CLASS zui5latest_cl_ui5_util_context DEFINITION LOCAL FRIENDS ltcl_rtti.
 
 
 CLASS ltcl_rtti IMPLEMENTATION.
-
-  METHOD test_hash_string.
-
-    " the one promise: equal texts give equal answers, different texts
-    " different ones - on every runtime. Where cl_abap_message_digest
-    " exists (a system, and open-abap-core under npm run unit) the answer
-    " is the SHA-256 of the characters; where it does not, the text itself,
-    " and the comparison holds as before
-    DATA(lv_abc)   = zui5latest_cl_ui5_util_context=>hash_string( `abc` ).
-    DATA(lv_again) = zui5latest_cl_ui5_util_context=>hash_string( `abc` ).
-    DATA(lv_other) = zui5latest_cl_ui5_util_context=>hash_string( `abd` ).
-    DATA(lv_empty) = zui5latest_cl_ui5_util_context=>hash_string( `` ).
-
-    cl_abap_unit_assert=>assert_equals( exp = lv_abc
-                                        act = lv_again ).
-    cl_abap_unit_assert=>assert_differs( exp = lv_abc
-                                         act = lv_other ).
-    cl_abap_unit_assert=>assert_differs( exp = lv_abc
-                                         act = lv_empty ).
-
-    IF zui5latest_cl_ui5_util_context=>rtti_check_class_exists( `CL_ABAP_MESSAGE_DIGEST` ) = abap_true.
-      cl_abap_unit_assert=>assert_equals( exp = `BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD`
-                                          act = to_upper( lv_abc ) ).
-      cl_abap_unit_assert=>assert_equals( exp = 64
-                                          act = strlen( lv_empty ) ).
-    ELSE.
-      cl_abap_unit_assert=>assert_equals( exp = `abc`
-                                          act = lv_abc ).
-      cl_abap_unit_assert=>assert_initial( lv_empty ).
-    ENDIF.
-
-  ENDMETHOD.
-
-  METHOD test_hash_fallback.
-
-    " the fallback branch on every runtime: a digest class that does not
-    " exist answers nothing, and hash_string( ) then answers the text
-    " itself (asserted above where the runtime has no digest class)
-    DATA(lv_long) = repeat( val = `{"ROW":"value"}`
-                            occ = 1000 ).
-    " (a class that exists without the method is the same CATCH on a system
-    " - CX_SY_DYN_CALL_ILLEGAL_METHOD - and a JS TypeError no CATCH sees in
-    " the transpiled runtime, so it is not asserted here)
-    cl_abap_unit_assert=>assert_initial( zui5latest_cl_ui5_util_context=>hash_string_by_class(
-                                             val       = lv_long
-                                             classname = `ZZ_NO_SUCH_DIGEST_CLASS` ) ).
-
-  ENDMETHOD.
 
   METHOD test_attri_include.
 
@@ -3034,10 +2990,10 @@ CLASS ltcl_edge IMPLEMENTATION.
     cl_abap_unit_assert=>assert_false( zui5latest_cl_ui5_util_context=>rtti_check_class_exists( `zz_no_such_class_4711` ) ).
     cl_abap_unit_assert=>assert_false( zui5latest_cl_ui5_util_context=>rtti_check_class_exists( `ZZ_NO_SUCH_CLASS_4711` ) ).
     cl_abap_unit_assert=>assert_false( zui5latest_cl_ui5_util_context=>rtti_check_class_exists( `` ) ).
-    " an interface is no class
-    cl_abap_unit_assert=>assert_equals(
-        exp = zui5latest_cl_ui5_util_context=>rtti_check_class_exists( lv_name )
-        act = zui5latest_cl_ui5_util_context=>rtti_check_class_exists( to_lower( lv_name ) ) ).
+    " an interface resolves too - describe_by_name answers for every
+    " global type - and the lower-case spelling gets the same answer
+    cl_abap_unit_assert=>assert_true( zui5latest_cl_ui5_util_context=>rtti_check_class_exists( lv_name ) ).
+    cl_abap_unit_assert=>assert_true( zui5latest_cl_ui5_util_context=>rtti_check_class_exists( to_lower( lv_name ) ) ).
 
   ENDMETHOD.
 

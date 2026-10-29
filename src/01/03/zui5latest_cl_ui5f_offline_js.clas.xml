@@ -3,9 +3,9 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>ZUI5LATEST_CL_UI5F_HISTORY_JS</CLSNAME>
+    <CLSNAME>ZUI5LATEST_CL_UI5F_OFFLINE_JS</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>abap2UI5 - History.js</DESCRIPT>
+    <DESCRIPT>abap2UI5 - Offline.js</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>

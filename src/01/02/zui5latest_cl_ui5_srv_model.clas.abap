@@ -38,6 +38,35 @@ CLASS zui5latest_cl_ui5_srv_model DEFINITION PUBLIC FINAL.
       RETURNING
         VALUE(result) TYPE string.
 
+    " automatic model update: the pre-main( ) snapshot of the bound values,
+    " one copy per attribute the JSON loop would serialize. A COPY, not the
+    " serialized model: assigning an internal table or a string to another
+    " data object shares its body until one side is written (table sharing),
+    " so the snapshot costs nothing for an attribute main( ) leaves alone -
+    " and comparing it afterwards is a memory compare, not an ajson tree, a
+    " stringify and a digest over it. The references live on the handler
+    " for one dispatch iteration and never enter the draft
+    TYPES:
+      BEGIN OF ty_s_snapshot,
+        name   TYPE string,
+        o_data TYPE REF TO data,
+      END OF ty_s_snapshot.
+    TYPES ty_t_snapshot TYPE SORTED TABLE OF ty_s_snapshot WITH UNIQUE KEY name.
+
+    METHODS main_snapshot
+      RETURNING
+        VALUE(result) TYPE ty_t_snapshot.
+
+    "! true when a bound value differs from its snapshot, or is bound now
+    "! and was not when the snapshot was taken - the attribute filter is
+    "! the one of main_json_stringify, so what is compared is what would
+    "! be serialized
+    METHODS main_snapshot_changed
+      IMPORTING
+        snapshot      TYPE ty_t_snapshot
+      RETURNING
+        VALUE(result) TYPE abap_bool.
+
     DATA mt_attri TYPE REF TO zui5latest_if_ui5_types=>ty_t_attri.
     DATA mo_app   TYPE REF TO object.
 
@@ -614,6 +643,68 @@ CLASS zui5latest_cl_ui5_srv_model IMPLEMENTATION.
                              iv_path  = lv_node
                              iv_name  = lr_attri->name ).
       ENDTRY.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD main_snapshot.
+
+    FIELD-SYMBOLS <val>  TYPE any.
+    FIELD-SYMBOLS <copy> TYPE any.
+
+    LOOP AT mt_attri->* REFERENCE INTO DATA(lr_attri) "#EC CI_SORTSEQ
+         WHERE bind = abap_true
+               AND type_kind <> zui5latest_cl_ui5_util_context=>cv_typedescr_typekind_dref
+               AND type_kind <> zui5latest_cl_ui5_util_context=>cv_typedescr_typekind_oref.
+
+      TRY.
+          DATA(lr_ref) = attri_get_val_ref( lr_attri->name ).
+        CATCH cx_root.
+          CONTINUE.
+      ENDTRY.
+
+      ASSIGN lr_ref->* TO <val>.
+      DATA lr_copy TYPE REF TO data.
+      CREATE DATA lr_copy LIKE <val>.
+      ASSIGN lr_copy->* TO <copy>.
+      <copy> = <val>.
+      INSERT VALUE #( name   = lr_attri->name
+                      o_data = lr_copy ) INTO TABLE result.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD main_snapshot_changed.
+
+    FIELD-SYMBOLS <val>  TYPE any.
+    FIELD-SYMBOLS <copy> TYPE any.
+
+    LOOP AT mt_attri->* REFERENCE INTO DATA(lr_attri) "#EC CI_SORTSEQ
+         WHERE bind = abap_true
+               AND type_kind <> zui5latest_cl_ui5_util_context=>cv_typedescr_typekind_dref
+               AND type_kind <> zui5latest_cl_ui5_util_context=>cv_typedescr_typekind_oref.
+
+      " bound by this main( ): the client holds no value for it yet
+      READ TABLE snapshot REFERENCE INTO DATA(lr_snap) WITH TABLE KEY name = lr_attri->name.
+      IF sy-subrc <> 0.
+        result = abap_true.
+        RETURN.
+      ENDIF.
+
+      TRY.
+          DATA(lr_ref) = attri_get_val_ref( lr_attri->name ).
+        CATCH cx_root.
+          CONTINUE.
+      ENDTRY.
+
+      ASSIGN lr_ref->* TO <val>.
+      ASSIGN lr_snap->o_data->* TO <copy>.
+      IF <val> <> <copy>.
+        result = abap_true.
+        RETURN.
+      ENDIF.
+
     ENDLOOP.
 
   ENDMETHOD.
@@ -1791,7 +1882,13 @@ CLASS zui5latest_cl_ui5_srv_model IMPLEMENTATION.
       RETURN.
     ENDIF.
     DATA(lv_off) = lv_len - 3.
-    result = xsdbool( iv_name+lv_off(3) = `->*` ).
+    " substring( ), not iv_name+lv_off(3): the caller passes a component of a
+    " dereferenced data reference, and offset/length access on that
+    " parameter dumps with GETWA_NOT_ASSIGNED on 7.02 kernels
+    DATA(lv_tail) = substring( val = iv_name
+                               off = lv_off
+                               len = 3 ).
+    result = xsdbool( lv_tail = `->*` ).
 
   ENDMETHOD.
 
@@ -2266,6 +2363,7 @@ CLASS zui5latest_cl_ui5_srv_model IMPLEMENTATION.
     FIELD-SYMBOLS <comp>   TYPE any.
     FIELD-SYMBOLS <before> TYPE any.
     DATA lr_col_kind TYPE REF TO ty_s_col_kind.
+    DATA li_slice TYPE REF TO zui5latest_if_ajson.
     ASSIGN ir_comp->* TO <comp>.
 
     " the column's kind first, asked once per COLUMN (a property of the
@@ -2358,14 +2456,16 @@ CLASS zui5latest_cl_ui5_srv_model IMPLEMENTATION.
               " sender of a genuinely PARTIAL object is the obsolete
               " _bind( custom_filter ) dropping a non-initial field - such a
               " field is cleared here, exactly as on the attribute level
-              io_delta->slice( iv_path )->to_abap( EXPORTING iv_corresponding = abap_true
-                                                   IMPORTING ev_container     = <comp> ).
+              li_slice = io_delta->slice( iv_path ).
+              li_slice->to_abap( EXPORTING iv_corresponding = abap_true
+                                 IMPORTING ev_container     = <comp> ).
             ENDIF.
 
           WHEN zui5latest_if_ajson_types=>node_type-array.
             " a whole sub-table value replaced a nested delta on the client
-            io_delta->slice( iv_path )->to_abap( EXPORTING iv_corresponding = abap_true
-                                                 IMPORTING ev_container     = <comp> ).
+            li_slice = io_delta->slice( iv_path ).
+            li_slice->to_abap( EXPORTING iv_corresponding = abap_true
+                               IMPORTING ev_container     = <comp> ).
 
           WHEN OTHERS.
             delta_apply_scalar( io_delta     = io_delta

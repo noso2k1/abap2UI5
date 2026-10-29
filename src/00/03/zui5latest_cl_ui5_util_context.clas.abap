@@ -756,21 +756,6 @@ CLASS zui5latest_cl_ui5_util_context DEFINITION
       RETURNING
         VALUE(result) TYPE string.
 
-    "! A digest of a text for EQUALITY comparisons only - a fixed 64
-    "! characters standing in for a text nobody has to read back (the
-    "! client-model snapshot a draft carries, z2ui5_cl_ui5_app_cont). SHA-256
-    "! over the characters through cl_abap_message_digest (7.02 and up,
-    "! released in ABAP Cloud, open-abap-core has it too; named dynamically);
-    "! where the class is absent or cannot answer, the text itself is the
-    "! answer, so a comparison still holds. The same input always gives the
-    "! same answer within one system; it is never stored for longer than a
-    "! draft lives
-    CLASS-METHODS hash_string
-      IMPORTING
-        val           TYPE clike
-      RETURNING
-        VALUE(result) TYPE string.
-
     "! A checksum of a text for a cache validator, not a cryptographic hash:
     "! `bytes-h1-h2-h3`, three modular accumulators over the UTF-8
     "! bytes plus their count. Plain ABAP, so it downports and transpiles;
@@ -936,11 +921,6 @@ CLASS zui5latest_cl_ui5_util_context DEFINITION
       END OF ty_s_class_exists.
     CLASS-DATA gt_class_exists TYPE HASHED TABLE OF ty_s_class_exists WITH UNIQUE KEY name.
 
-    " hash_string: the dynamic call raised once in this roll area, so the
-    " class is absent here - the text answers from then on without a
-    " raise per call (two per roundtrip)
-    CLASS-DATA gv_hash_absent TYPE abap_bool.
-
     " the character set c_escape_xml guards against, concatenated once per
     " roll area instead of once per attribute value. Lazily filled on first
     " use - a public class_constructor is the alternative and abap-check
@@ -954,16 +934,6 @@ CLASS zui5latest_cl_ui5_util_context DEFINITION
         val           TYPE REF TO cl_abap_datadescr
       RETURNING
         VALUE(result) TYPE ty_s_flat_comp-json_kind.
-
-    " hash_string with the digest class named by the caller, INITIAL when
-    " that class cannot answer - the test class reaches that branch through
-    " a class that does not exist
-    CLASS-METHODS hash_string_by_class
-      IMPORTING
-        val           TYPE clike
-        classname     TYPE clike
-      RETURNING
-        VALUE(result) TYPE string.
 
     " rtti_check_class_impl_intf, cached per class and interface the way
     " the existence check is: it is asked on every app start, and each
@@ -2269,7 +2239,9 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
           cl_abap_datadescr=>typekind_float OR
           cl_abap_datadescr=>typekind_decfloat16 OR
           cl_abap_datadescr=>typekind_decfloat34 OR
-          cl_abap_datadescr=>typekind_hex.
+          cl_abap_datadescr=>typekind_hex OR
+          `8`.
+        " `8`: typekind_int8, a constant lower releases do not have
         result = abap_true.
     ENDCASE.
 
@@ -3020,7 +2992,9 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
               cl_abap_datadescr=>typekind_packed OR
               cl_abap_datadescr=>typekind_float OR
               cl_abap_datadescr=>typekind_decfloat16 OR
-              cl_abap_datadescr=>typekind_decfloat34.
+              cl_abap_datadescr=>typekind_decfloat34 OR
+              `8`.
+            " `8`: typekind_int8, a constant lower releases do not have
             result = |{ val }|.
           WHEN OTHERS.
             result = val.
@@ -3154,10 +3128,14 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
     " replaces below, unchanged
     IF gv_xml_escape_specials IS INITIAL.
       " the XML-illegal control characters as one string, so the CA scan
-      " stays a single statement; built from their UTF-8 bytes
+      " stays a single statement; built from their UTF-8 bytes. Behind them
+      " the two non-characters U+FFFE and U+FFFF (EF BF BE, EF BF BF): a
+      " legacy long text through a broken codepage conversion carries them,
+      " and the XMLView parser refuses the whole document for one of them
       TRY.
           gv_xml_escape_controls = conv_get_string_by_xstring(
-              CONV xstring( `000102030405060708` && `0B0C` && `0E0F101112131415161718191A1B1C1D1E1F` ) ).
+              CONV xstring( `000102030405060708` && `0B0C` && `0E0F101112131415161718191A1B1C1D1E1F`
+                            && `EFBFBE` && `EFBFBF` ) ).
         CATCH zui5latest_cx_ui5_util_error.
           " No codepage API here (UNSUPPORTED_CODEPAGE_API). Degrade instead of
           " failing: the set stays empty, the CA scan below then matches no
@@ -3511,6 +3489,7 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
   METHOD conv_decode_x_base64.
     DATA lv_web_http_name TYPE c LENGTH 19.
     DATA classname        TYPE c LENGTH 15.
+    DATA lx_first         TYPE REF TO cx_root.
 
     TRY.
 
@@ -3520,8 +3499,14 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
             encoded = val
           RECEIVING
             decoded = result.
+        RETURN.
 
-      CATCH cx_root.
+      CATCH cx_root INTO lx_first ##NO_HANDLER.
+        " the cause is chained below if the classic API fails too - the
+        " two-TRY shape of conv_get_string_by_xstring, reasoning there
+    ENDTRY.
+
+    TRY.
 
         classname = `CL_HTTP_UTILITY`.
         CALL METHOD (classname)=>(`DECODE_X_BASE64`)
@@ -3530,6 +3515,11 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
           RECEIVING
             decoded = result.
 
+      CATCH cx_root.
+        RAISE EXCEPTION TYPE zui5latest_cx_ui5_util_error
+          EXPORTING
+            val      = `UNSUPPORTED_BASE64_API - neither CL_WEB_HTTP_UTILITY nor CL_HTTP_UTILITY could decode here`
+            previous = lx_first.
     ENDTRY.
 
   ENDMETHOD.
@@ -3537,6 +3527,7 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
   METHOD conv_encode_x_base64.
     DATA lv_web_http_name TYPE c LENGTH 19.
     DATA classname        TYPE c LENGTH 15.
+    DATA lx_first         TYPE REF TO cx_root.
 
     TRY.
 
@@ -3546,8 +3537,13 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
             unencoded = val
           RECEIVING
             encoded   = result.
+        RETURN.
 
-      CATCH cx_root.
+      CATCH cx_root INTO lx_first ##NO_HANDLER.
+        " see conv_decode_x_base64
+    ENDTRY.
+
+    TRY.
 
         classname = `CL_HTTP_UTILITY`.
         CALL METHOD (classname)=>(`ENCODE_X_BASE64`)
@@ -3556,6 +3552,11 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
           RECEIVING
             encoded   = result.
 
+      CATCH cx_root.
+        RAISE EXCEPTION TYPE zui5latest_cx_ui5_util_error
+          EXPORTING
+            val      = `UNSUPPORTED_BASE64_API - neither CL_WEB_HTTP_UTILITY nor CL_HTTP_UTILITY could encode here`
+            previous = lx_first.
     ENDTRY.
 
   ENDMETHOD.
@@ -4015,45 +4016,6 @@ CLASS zui5latest_cl_ui5_util_context IMPLEMENTATION.
 
       CATCH cx_root.
         do_fallback = abap_true.
-    ENDTRY.
-
-  ENDMETHOD.
-
-  METHOD hash_string.
-
-    IF gv_hash_absent = abap_true.
-      result = val.
-      RETURN.
-    ENDIF.
-    result = hash_string_by_class( val       = val
-                                   classname = `CL_ABAP_MESSAGE_DIGEST` ).
-    IF result IS INITIAL.
-      " no digest class, or one that cannot answer: the text itself, which
-      " compares exactly as before
-      gv_hash_absent = abap_true.
-      result = val.
-    ENDIF.
-
-  ENDMETHOD.
-
-  METHOD hash_string_by_class.
-
-    DATA lv_classname TYPE string.
-    DATA lv_data      TYPE string.
-    DATA lv_algorithm TYPE string.
-
-    lv_classname = classname.
-    lv_data      = val.
-    lv_algorithm = `SHA256`.
-    TRY.
-        CALL METHOD (lv_classname)=>calculate_hash_for_char
-          EXPORTING
-            if_algorithm  = lv_algorithm
-            if_data       = lv_data
-          IMPORTING
-            ef_hashstring = result.
-      CATCH cx_root.
-        CLEAR result.
     ENDTRY.
 
   ENDMETHOD.

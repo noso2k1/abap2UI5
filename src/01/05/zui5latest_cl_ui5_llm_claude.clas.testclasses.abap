@@ -214,16 +214,22 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD test_bad_temperature.
 
+    DATA lt_bad TYPE string_table.
+
     DATA(lo_llm) = NEW zui5latest_cl_ui5_llm_claude( model   = `test-model`
                                                 io_http = NEW ltd_http( ) ).
-    TRY.
-        lo_llm->build_request( t_message = conversation( )
-                               s_options = VALUE #( temperature = `1.2.3` ) ).
-        cl_abap_unit_assert=>fail( `a temperature that is no number must be refused` ).
-      CATCH zui5latest_cx_ui5_llm INTO DATA(lx).
-        cl_abap_unit_assert=>assert_char_cp( exp = `*temperature*`
-                                             act = lx->get_text( ) ).
-    ENDTRY.
+    " `.7` and `1.` passed the character check and went out as invalid JSON
+    lt_bad = VALUE #( ( `1.2.3` ) ( `.7` ) ( `1.` ) ( `.` ) ).
+    LOOP AT lt_bad INTO DATA(lv_bad).
+      TRY.
+          lo_llm->build_request( t_message = conversation( )
+                                 s_options = VALUE #( temperature = lv_bad ) ).
+          cl_abap_unit_assert=>fail( |the temperature { lv_bad } must be refused| ).
+        CATCH zui5latest_cx_ui5_llm INTO DATA(lx).
+          cl_abap_unit_assert=>assert_char_cp( exp = `*temperature*`
+                                               act = lx->get_text( ) ).
+      ENDTRY.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -231,12 +237,15 @@ CLASS ltcl_test IMPLEMENTATION.
 
     " a thinking block first, which carries no text - the answer is the
     " first block of type text
-    DATA(ls_result) = zui5latest_cl_ui5_llm_claude=>parse_response( VALUE #(
-        status = 200
-        body   = `{"id":"msg_1","type":"message","role":"assistant","model":"test-model",`
-              && `"content":[{"type":"thinking","thinking":"","signature":"x"},`
-              && `{"type":"text","text":"abap2UI5 builds UI5 apps in ABAP."}],`
-              && `"stop_reason":"end_turn","usage":{"input_tokens":21,"output_tokens":9}}` ) ).
+    " the body as a plain statement first: inside VALUE #( ) the 702
+    " downport joins the operands into one line over 255 characters
+    DATA lv_body TYPE string.
+    lv_body = `{"id":"msg_1","type":"message","role":"assistant","model":"test-model",`
+            && `"content":[{"type":"thinking","thinking":"","signature":"x"},`
+            && `{"type":"text","text":"abap2UI5 builds UI5 apps in ABAP."}],`
+            && `"stop_reason":"end_turn","usage":{"input_tokens":21,"output_tokens":9}}`.
+    DATA(ls_result) = zui5latest_cl_ui5_llm_claude=>parse_response( VALUE #( status = 200
+                                                                        body   = lv_body ) ).
 
     cl_abap_unit_assert=>assert_equals( exp = `abap2UI5 builds UI5 apps in ABAP.`
                                         act = ls_result-text ).

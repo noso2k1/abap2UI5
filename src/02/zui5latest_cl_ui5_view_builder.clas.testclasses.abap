@@ -24,6 +24,7 @@ CLASS ltcl_builder DEFINITION FINAL FOR TESTING
     METHODS invalid_name_raises FOR TESTING.
     METHODS invalid_name_shapes_raise FOR TESTING.
     METHODS prefix_with_colon_raises FOR TESTING.
+    METHODS name_colon_shapes FOR TESTING.
     METHODS escape_quotes_cr_mixed FOR TESTING.
     METHODS escape_entity_is_text FOR TESTING.
     METHODS escape_unicode_passthrough FOR TESTING.
@@ -472,7 +473,7 @@ CLASS ltcl_builder IMPLEMENTATION.
     " view died in the browser far from the line that wrote it
     DATA lt_bad TYPE string_table.
     lt_bad = VALUE #( ( `te(xt` ) ( `te,xt` ) ( `te;xt` ) ( `te{xt` ) ( `te!xt` )
-                      ( `1st` ) ( `.text` ) ( `-text` ) ).
+                      ( `1st` ) ( `.text` ) ( `-text` ) ( `:text` ) ).
 
     LOOP AT lt_bad INTO DATA(lv_bad).
       DATA(view) = zui5latest_cl_ui5_view_builder=>factory( )->ele( `Panel` ).
@@ -506,6 +507,41 @@ CLASS ltcl_builder IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD name_colon_shapes.
+
+    " a trailing colon (the typo `xmlns:`) and a second colon pass the
+    " first-character check and used to render `xmlns:=""` / `<a::b/>`
+    DATA lt_bad TYPE string_table.
+    lt_bad = VALUE #( ( `xmlns:` ) ( `core:` ) ( `a::b` ) ( `a:b:c` ) ).
+
+    LOOP AT lt_bad INTO DATA(lv_bad).
+      DATA(view) = zui5latest_cl_ui5_view_builder=>factory( )->ele( `Panel` ).
+      TRY.
+          view->a( n = lv_bad
+                   v = `x` ).
+          cl_abap_unit_assert=>fail( |attribute name '{ lv_bad }' must raise| ).
+        CATCH zui5latest_cx_ui5_util_error INTO DATA(lx_attr).
+          cl_abap_unit_assert=>assert_true( act = xsdbool( lx_attr->get_text( ) CS `is not a valid XML name` )
+                                            msg = lx_attr->get_text( ) ).
+      ENDTRY.
+      TRY.
+          view->tag( lv_bad ).
+          cl_abap_unit_assert=>fail( |element name '{ lv_bad }' must raise| ).
+        CATCH zui5latest_cx_ui5_util_error ##NO_HANDLER.
+      ENDTRY.
+    ENDLOOP.
+
+    " one colon in the middle is a prefix and stays valid
+    DATA(lv_xml) = zui5latest_cl_ui5_view_builder=>factory(
+        )->tag( `core:Fragment`
+            )->a( n = `xmlns:core`
+                  v = `sap.ui.core`
+        )->stringify( ).
+    cl_abap_unit_assert=>assert_equals( exp = `<core:Fragment xmlns:core="sap.ui.core"/>`
+                                        act = lv_xml ).
+
+  ENDMETHOD.
+
   METHOD prefix_with_colon_raises.
 
     " the builder writes the colon behind the prefix itself - one in the
@@ -517,6 +553,16 @@ CLASS ltcl_builder IMPLEMENTATION.
       CATCH zui5latest_cx_ui5_util_error INTO DATA(lx).
         cl_abap_unit_assert=>assert_true( act = xsdbool( lx->get_text( ) CS `namespace prefix` )
                                           msg = lx->get_text( ) ).
+    ENDTRY.
+
+    " nor may the name bring a prefix of its own beside ns - `core:x:Icon`
+    TRY.
+        zui5latest_cl_ui5_view_builder=>factory( )->ele( n  = `x:Icon`
+                                                    ns = `core` ).
+        cl_abap_unit_assert=>fail( `a prefixed name beside ns must raise` ).
+      CATCH zui5latest_cx_ui5_util_error INTO DATA(lx_name).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( lx_name->get_text( ) CS `carries a prefix` )
+                                          msg = lx_name->get_text( ) ).
     ENDTRY.
 
   ENDMETHOD.

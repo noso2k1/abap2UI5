@@ -362,7 +362,8 @@ CLASS zui5latest_cl_ui5_app_start IMPLEMENTATION.
 
     DATA ls_config TYPE zui5latest_if_ui5_exit=>ty_s_http_config_post.
     TRY.
-        zui5latest_cl_ui5_user_exit=>get_instance( )->set_config_http_post( CHANGING cs_config = ls_config ).
+        DATA(lo_user_exit) = zui5latest_cl_ui5_user_exit=>get_instance( ).
+        lo_user_exit->set_config_http_post( CHANGING cs_config = ls_config ).
       CATCH cx_root ##NO_HANDLER.
     ENDTRY.
     result = ls_config-check_hide_error_details.

@@ -488,6 +488,10 @@ CLASS zui5latest_cl_ui5f_dtools_js IMPLEMENTATION.
              `              controller: this,` && |\n| &&
              `              id: this.fragmentId(),` && |\n| &&
              `            });` && |\n| &&
+             `` && |\n| &&
+             `            this.oDialog.setEscapeHandler?.((oPromise) =>` && |\n| &&
+             `              this.onEscape(oPromise),` && |\n| &&
+             `            );` && |\n| &&
              `          }` && |\n| &&
              `` && |\n| &&
              `          if (Lib.isDestroyed(this)) {` && |\n| &&

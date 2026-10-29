@@ -182,7 +182,9 @@ CLASS zui5latest_cl_ui5_llm_openai IMPLEMENTATION.
     ENDIF.
     IF s_options-temperature IS NOT INITIAL
         AND ( s_options-temperature CN `0123456789.` OR count( val = s_options-temperature
-                                                               sub = `.` ) > 1 ).
+                                                               sub = `.` ) > 1
+              " JSON wants a digit on both sides of the point - `.7` and `1.` are no number there
+              OR s_options-temperature CP `.*` OR s_options-temperature CP `*.` ).
       RAISE EXCEPTION TYPE zui5latest_cx_ui5_llm
         EXPORTING
           text = |the temperature { s_options-temperature } is no number|.
@@ -310,6 +312,17 @@ CLASS zui5latest_cl_ui5_llm_openai IMPLEMENTATION.
     result-s_usage-output_tokens = lo_json->get_integer( `/usage/completion_tokens` ).
     result-text                  = lo_json->get_string( `/choices/1/message/content` ).
 
+    " a declined request: content is null and message.refusal says why -
+    " reported like the Claude provider's stop_reason refusal, not as a
+    " token limit
+    DATA(lv_refusal) = lo_json->get_string( `/choices/1/message/refusal` ).
+    IF result-text IS INITIAL AND lv_refusal IS NOT INITIAL.
+      result-stop_reason = zui5latest_if_ui5_llm=>cs_stop-refusal.
+      RAISE EXCEPTION TYPE zui5latest_cx_ui5_llm
+        EXPORTING
+          text        = |the model declined to answer (refusal) - { lv_refusal }|
+          http_status = is_response-status.
+    ENDIF.
     IF result-text IS INITIAL.
       RAISE EXCEPTION TYPE zui5latest_cx_ui5_llm
         EXPORTING

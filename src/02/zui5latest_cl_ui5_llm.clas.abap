@@ -98,6 +98,14 @@ CLASS zui5latest_cl_ui5_llm DEFINITION
       RETURNING
         VALUE(result) TYPE REF TO zui5latest_if_ui5_llm.
 
+    "! The guide to building an app with abap2UI5 (docs/agents/building-apps.md
+    "! of the release installed here), as markdown - the system prompt for a
+    "! model that writes apps, and the reference for an assistant that reads
+    "! this system's code rather than the repository.
+    CLASS-METHODS guide
+      RETURNING
+        VALUE(result) TYPE string.
+
   PROTECTED SECTION.
 
   PRIVATE SECTION.
@@ -133,6 +141,13 @@ CLASS zui5latest_cl_ui5_llm IMPLEMENTATION.
 
     result = NEW zui5latest_cl_ui5_llm_local( t_rule   = t_rule
                                          fallback = fallback ).
+
+  ENDMETHOD.
+
+  METHOD guide.
+
+    " generated from the guide by .github/scripts/generate-guide-class.mjs
+    result = zui5latest_cl_ui5_llm_guide=>get( ).
 
   ENDMETHOD.
 

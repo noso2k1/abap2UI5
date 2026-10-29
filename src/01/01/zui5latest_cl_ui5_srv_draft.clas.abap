@@ -62,7 +62,8 @@ CLASS zui5latest_cl_ui5_srv_draft IMPLEMENTATION.
     " would pay for an index on TIMESTAMPL/UNAME on every click. Do not add
     " one, and do not "optimize" these statements around the missing index.
     DATA(ls_config) = VALUE zui5latest_if_ui5_exit=>ty_s_http_config_post( ).
-    zui5latest_cl_ui5_user_exit=>get_instance( )->set_config_http_post( CHANGING cs_config = ls_config ).
+    DATA(lo_user_exit) = zui5latest_cl_ui5_user_exit=>get_instance( ).
+    lo_user_exit->set_config_http_post( CHANGING cs_config = ls_config ).
 
     " z2ui5_cl_ui5_user_exit=>set_config_http_post already guarantees a positive
     " expiry ( <= 0 falls back to its default ), so no second clamp here

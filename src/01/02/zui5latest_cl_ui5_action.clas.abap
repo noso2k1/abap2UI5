@@ -117,9 +117,6 @@ CLASS zui5latest_cl_ui5_action IMPLEMENTATION.
       result->ms_actual-t_model_skipped = result->mo_app->model_json_parse(
                                               io_model = mo_handler->ms_request-o_model
                                               iv_path  = mo_handler->ms_request-model_path ).
-      " the deltas just changed the state that digest describes - drop it,
-      " so main_process falls back to a real serialization for its snapshot
-      CLEAR result->mo_app->mv_model_client_hash.
     ENDIF.
 
     result->ms_actual-event       = mo_handler->ms_request-s_front-event.
@@ -156,7 +153,13 @@ CLASS zui5latest_cl_ui5_action IMPLEMENTATION.
             " bookmark was made of (see mv_app_state_active)
             result->mo_app->mv_app_state_active = abap_true.
           ENDIF.
+          " the restored app is a ROOT of this session: the stack and the
+          " caller it had in the session the bookmark was made in are gone
+          " with that session. Clearing only the stack left get_app_prev( )
+          " following a hop-time draft of the dead session - a raw
+          " NO_DRAFT_ENTRY 500 once it had expired
           result->mo_app->ms_draft-id_prev_app_stack = ``.
+          result->mo_app->ms_draft-id_prev_app       = ``.
           " normalize the chain like factory_by_frontend: id_prev must
           " point at the draft this restore was loaded from, not at
           " whatever id was serialized in a previous session
@@ -355,7 +358,9 @@ CLASS zui5latest_cl_ui5_action IMPLEMENTATION.
       ENDIF.
       lv_count = lv_count + 1.
       TRY.
-          lv_next = zui5latest_cl_ui5_app_cont=>db_load( lv_next )->ms_draft-id_prev_app_stack.
+          " the id chain only: a db_load( ) parsed every ancestor's whole
+          " state (asXML, attribute load, buffer insert) to read one field
+          lv_next = zui5latest_cl_ui5_srv_draft=>get_instance( )->read_info( lv_next )-id_prev_app_stack.
         CATCH cx_root.
           " an expired link ends the stack the way Back would find it
           RETURN.

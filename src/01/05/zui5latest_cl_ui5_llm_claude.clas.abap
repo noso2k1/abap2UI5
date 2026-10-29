@@ -149,7 +149,9 @@ CLASS zui5latest_cl_ui5_llm_claude IMPLEMENTATION.
     ENDIF.
     IF s_options-temperature IS NOT INITIAL
         AND ( s_options-temperature CN `0123456789.` OR count( val = s_options-temperature
-                                                               sub = `.` ) > 1 ).
+                                                               sub = `.` ) > 1
+              " JSON wants a digit on both sides of the point - `.7` and `1.` are no number there
+              OR s_options-temperature CP `.*` OR s_options-temperature CP `*.` ).
       RAISE EXCEPTION TYPE zui5latest_cx_ui5_llm
         EXPORTING
           text = |the temperature { s_options-temperature } is no number|.

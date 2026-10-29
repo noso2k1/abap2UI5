@@ -3,9 +3,9 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>ZUI5LATEST_CL_UI5F_FAVICON_JS</CLSNAME>
+    <CLSNAME>ZUI5LATEST_CL_UI5F_HTMLFRM_JS</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>abap2UI5 - Favicon.js</DESCRIPT>
+    <DESCRIPT>abap2UI5 - HTMLFrame.js</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>
